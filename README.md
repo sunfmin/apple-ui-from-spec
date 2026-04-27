@@ -6,7 +6,7 @@ Claude Code skill: turn an Apple-platform UI spec (macOS, iOS, or iPadOS) into *
 
 Given a multi-screen UI spec, this skill drives Claude through:
 
-1. **Decomposing the spec** into a flat screen inventory (one row per screen × state × theme), persisted to `docs/screens.md`
+1. **Decomposing the spec** into a flat screen inventory (one row per screen × state), persisted to `docs/screens.md`
 2. **Generating a Swift Package** with two targets:
     - `AppleUIScreens` — pure SwiftUI views, models, components, tokens. Drop-in for the real app
     - `SnapshotTool` — executable that wires fixtures and renders PNGs
@@ -22,7 +22,7 @@ The default LLM failure modes when given "build these Mac/iOS screens":
 - Picks SwiftUI but launches the app to "verify" — slow, brittle, can't run in CI
 - Picks `ImageRenderer` and produces blank PNGs because `NavigationSplitView` / materials / sheets need an AppKit/UIKit host
 - Embeds mock stores inside views, making them un-shippable
-- Forgets dark mode, hover states, empty states, validation errors
+- Forgets hover states, empty states, validation errors
 - Skips the design-review pass
 
 This skill closes every one of those gaps, with explicit substitution rules for the things that still don't render offscreen (real vibrancy, sheets, popovers, animations).
@@ -64,7 +64,7 @@ When the skill finishes, you have:
 - `Sources/SnapshotTool/` — render harness with `Fixtures.swift`
 - `docs/screens.md` — the inventory
 - `docs/review-round-1.md` … `review-round-N.md` — the design-review trail
-- `snapshots/*.png` — one PNG per inventory row, both light + dark modes
+- `snapshots/*.png` — one PNG per inventory row
 
 ## License
 

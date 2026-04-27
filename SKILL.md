@@ -22,6 +22,35 @@ A few things remain uncapturable on either path (real `NSVisualEffectView` vibra
 
 **REQUIRED SUB-SKILL:** Use `frontend-design` for the review pass in step 7.
 
+## Quick Reference
+
+**Inventory column values:**
+
+| column | values |
+|--------|--------|
+| `platform` | `macOS` \| `iOS` \| `iPadOS` |
+| `kind` (macOS) | `window`, `sheet`, `popover`, `inspector`, `menu` |
+| `kind` (iOS / iPadOS) | `screen`, `sheet`, `popover`, `alert`, `tab`, `sidebar` |
+| `chrome` | `view` (default, all platforms) \| `window` (macOS only, opt-in for real titlebar / `NSToolbar`) |
+| `size` | macOS: 1280×800 \| 1440×900 \| 1680×1050 ; macOS sheet: 460×220 → 640×520 ; iPhone 16: 393×852 ; iPad Pro 11": 1024×1366 ; iOS sheet (`.medium`): 393×440 |
+
+**State rubric — enumerate every state that applies (do not collapse):**
+
+| axis | values |
+|------|--------|
+| Data | empty, loading, populated, error |
+| Form | default (empty), filled, in-progress, validation error |
+| Interaction | hover (macOS, via `forceHoverTarget`), focus, disabled, selected, pressed (iOS) |
+| Window / screen | focused vs unfocused (macOS); landscape vs portrait (iOS / iPadOS, only if rotation is in spec) |
+
+**Forbidden combinations** (rejected by `Snap` precondition):
+- `chrome=window` on `iOS` or `iPadOS` — macOS-only
+- `chrome=window` on `kind != "window"` — sheets/popovers/alerts must be `chrome=view`
+
+**`chrome=window` opt-in triggers** (spec must use one of these): "titlebar", "traffic lights", "NSToolbar", "window chrome", or a mockup that explicitly shows them.
+
+**Pipeline:** spec → `docs/screens.md` (inventory) → `Sources/AppleUIScreens/` (views) + `Sources/SnapshotTool/Fixtures.swift` (data) → `swift run SnapshotTool` → `snapshots/*.png` → `frontend-design` → `docs/review-round-N.md` → fix in `AppleUIScreens/` only → re-render → repeat.
+
 ## When to Use
 
 - A spec lists multiple windows, screens, sheets, or states for macOS, iOS, or iPadOS
@@ -47,20 +76,18 @@ If the platform isn't named, infer it from vocabulary:
 
 ### 1. Decompose the spec FIRST — write `docs/screens.md`
 
-Before any code, extract a flat **screen inventory**. One row per artifact-state-theme combination:
+Before any code, extract a flat **screen inventory**. One row per artifact-state combination:
 
 | name | platform | kind | chrome | size | state |
 |------|----------|------|--------|------|-------|
-| main-three-pane-populated--light | macOS | window | view | 1280×800 | populated, light |
-| main-three-pane-populated--dark | macOS | window | view | 1280×800 | populated, dark |
-| main-three-pane-unfocused--light | macOS | window | view | 1280×800 | window unfocused, light |
-| main-with-real-toolbar--light | macOS | window | window | 1440×900 | populated, real NSToolbar + traffic lights, light |
-| new-folder-sheet-default--light | macOS | sheet | view | 460×220 | default, light |
-| new-folder-sheet-error--dark | macOS | sheet | view | 460×260 | validation error, dark |
-| onboarding-welcome--light | iOS | screen | view | 393×852 | iPhone 16, light |
-| onboarding-welcome--dark | iOS | screen | view | 393×852 | iPhone 16, dark |
-| settings-sheet-medium--light | iOS | sheet | view | 393×440 | `.medium` detent, light |
-| document-split--light | iPadOS | screen | view | 1024×1366 | iPad Pro 11", landscape, light |
+| main-three-pane-populated | macOS | window | view | 1280×800 | populated |
+| main-three-pane-unfocused | macOS | window | view | 1280×800 | window unfocused |
+| main-with-real-toolbar | macOS | window | window | 1440×900 | populated, real NSToolbar + traffic lights |
+| new-folder-sheet-default | macOS | sheet | view | 460×220 | default |
+| new-folder-sheet-error | macOS | sheet | view | 460×260 | validation error |
+| onboarding-welcome | iOS | screen | view | 393×852 | iPhone 16 |
+| settings-sheet-medium | iOS | sheet | view | 393×440 | `.medium` detent |
+| document-split | iPadOS | screen | view | 1024×1366 | iPad Pro 11", landscape |
 
 **Platform values:** `macOS` | `iOS` | `iPadOS`.
 
@@ -90,15 +117,12 @@ Default is `view`. Only mark `window` when the spec uses one of these trigger wo
 - **Form:** default (empty), filled, in-progress, validation error
 - **Interaction:** hover (macOS only — render via `forceHoverTarget` input), focus, disabled, selected, pressed (iOS)
 - **Window / screen:** focused vs unfocused (macOS only); landscape vs portrait (iOS / iPadOS, only if spec implies rotation)
-- **Theme:** light AND dark are both required by default. Skip a theme only if the user explicitly says single-mode.
 
-**Theme is a row multiplier.** Every screen-state row produces one `--light` and one `--dark` row by default. Quote any user opt-out in your completion report.
-
-**Other state combinations stack into one row.** A screen showing both "filled" and "validation error" is ONE row, not two.
+**State combinations stack into one row.** A screen showing both "filled" and "validation error" is ONE row, not two.
 
 **Cardinality cap.** If the inventory exceeds 30 rows, prune to states the user named or strongly implied — re-read the spec.
 
-Each row's `name` is kebab-case and becomes the PNG filename. Theme suffix is `--light` or `--dark` (double-dash for parser simplicity). Do not skip this step.
+Each row's `name` is kebab-case and becomes the PNG filename. Do not skip this step.
 
 ### 2. Stack: Swift Package, hosting-view snapshot harness
 
@@ -204,229 +228,47 @@ Use these freely inside `AppleUIScreens/Views/`.
 
 ### 6. Render every screen via hosting view — no app launch
 
-`SnapshotTool` provides one render function per platform.
+`SnapshotTool` provides one render function per platform. Each is small (~20 lines); copy from `examples/` and adapt.
 
-**macOS — `SnapshotMac.swift`:**
+| chrome | platform | function | source |
+|--------|----------|----------|--------|
+| view | macOS | `snapshotMac(view:size:)` — `NSHostingView` + `cacheDisplay` | `examples/SnapshotMac.swift` |
+| view | iOS / iPadOS | `snapshotIOS(view:size:)` — `UIHostingController` + `drawHierarchy` at 2× | `examples/SnapshotIOS.swift` |
+| window | macOS only | `snapshotMacWindow(view:size:title:toolbar:)` — headless `NSWindow` + `NSHostingController`, snapshots the **window frame view** (titlebar + traffic lights + `NSToolbar`) | `examples/SnapshotMacWindow.swift` |
 
-```swift
-#if canImport(AppKit)
-import SwiftUI
-import AppKit
+**`chrome=window` rules — read before copying `SnapshotMacWindow.swift`:**
+- Touch only `NSApplication.shared` (singleton). The following are FORBIDDEN — they would activate the app or order a window onscreen: `NSApp.run()`, `NSApp.setActivationPolicy(.regular)`, `NSApp.activate(...)`, `window.makeKeyAndOrderFront(_:)`, `window.orderFront(_:)`.
+- Snapshot `window.contentView?.superview` (the frame view), NOT `window.contentView` — the frame view is what contains the titlebar and toolbar.
+- `titleVisibility = .visible` — the whole point of `chrome=window` is the real titlebar.
+- Still cannot capture (run-loop / nothing-behind issues): real `NSVisualEffectView` vibrancy, `.sheet` / `.popover` / `.alert` presentation, animations. For these, render the body as a `chrome=view` row.
 
-@MainActor
-func snapshotMac<V: View>(_ view: V, size: CGSize, scheme: ColorScheme) -> Data? {
-    let host = NSHostingView(rootView:
-        view
-            .frame(width: size.width, height: size.height)
-            .environment(\.colorScheme, scheme)
-    )
-    host.frame = CGRect(origin: .zero, size: size)
-    host.layoutSubtreeIfNeeded()
+**`NSToolbar` retention — silent failure if forgotten.** `NSToolbar` holds its `delegate` weakly. If you write `tb.delegate = LibraryToolbarDelegate()`, the delegate deallocates immediately and the toolbar renders empty. Retain explicitly via `objc_setAssociatedObject(tb, "delegate-retain", delegate, .OBJC_ASSOCIATION_RETAIN)` (or store the delegate on a long-lived property). Build toolbars in `SnapshotTool/LibraryToolbar.swift` — NEVER inside `AppleUIScreens/`. See `examples/LibraryToolbar.swift`.
 
-    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
-    rep.size = host.bounds.size
-    host.cacheDisplay(in: host.bounds, to: rep)
-    return rep.representation(using: .png, properties: [:])
-}
-#endif
-```
+**Dispatcher — `SnapshotTool/main.swift`:** copy from `examples/SnapDispatcher.swift`. Defines `Platform`, `Chrome`, `Snap`, and the loop. The `Snap` initializer enforces forbidden combinations as preconditions:
+- `chrome=window` × (`iOS` | `iPadOS`) → `precondition` fails. iOS chrome (status bar, nav bar) is captured by `chrome=view`.
+- `chrome=window` × `kind != "window"` → `precondition` fails. Sheets/popovers/alerts cannot be captured by `chrome=window`; render the body as `chrome=view`.
 
-**iOS — `SnapshotIOS.swift`:**
-
-```swift
-#if canImport(UIKit)
-import SwiftUI
-import UIKit
-
-@MainActor
-func snapshotIOS<V: View>(_ view: V, size: CGSize, scheme: ColorScheme) -> Data? {
-    let controller = UIHostingController(rootView:
-        view
-            .frame(width: size.width, height: size.height)
-            .environment(\.colorScheme, scheme)
-    )
-    controller.view.bounds = CGRect(origin: .zero, size: size)
-    controller.view.backgroundColor = .clear
-    controller.overrideUserInterfaceStyle = (scheme == .dark) ? .dark : .light
-    controller.view.setNeedsLayout()
-    controller.view.layoutIfNeeded()
-
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = 2.0
-    let renderer = UIGraphicsImageRenderer(size: size, format: format)
-    let image = renderer.image { _ in
-        controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
-    }
-    return image.pngData()
-}
-#endif
-```
-
-**Optional headless-window function (macOS only)** — used for inventory rows with `chrome=window`. Touches `NSApplication.shared` (singleton); never calls `.run()`. No Dock icon, no visible window.
-
-**macOS — `SnapshotMacWindow.swift`:**
-
-```swift
-#if canImport(AppKit)
-import SwiftUI
-import AppKit
-
-@MainActor
-func snapshotMacWindow<V: View>(_ view: V, size: CGSize, scheme: ColorScheme,
-                                title: String = "",
-                                toolbar: NSToolbar? = nil) -> Data? {
-    _ = NSApplication.shared  // singleton; does NOT enter the run loop
-    // FORBIDDEN here (would activate the app or order a window onscreen):
-    //   NSApp.setActivationPolicy(.regular)
-    //   NSApp.activate(ignoringOtherApps:)
-    //   window.makeKeyAndOrderFront(_:)
-    //   window.orderFront(_:)
-
-    let host = NSHostingController(rootView: view.environment(\.colorScheme, scheme))
-    let window = NSWindow(
-        contentRect: CGRect(origin: .zero, size: size),
-        styleMask: [.titled, .closable, .miniaturizable, .resizable,
-                    .fullSizeContentView, .unifiedTitleAndToolbar],
-        backing: .buffered, defer: false)
-    window.contentViewController = host
-    window.toolbar = toolbar          // pass a real NSToolbar configured by SnapshotTool
-    window.title = title              // shown in titlebar; pass "" for blank
-    window.titleVisibility = .visible // default — `chrome=window` exists for real titlebar look
-    window.isReleasedWhenClosed = false
-    window.layoutIfNeeded()
-
-    // Snapshot the WINDOW FRAME (not just contentView) — captures titlebar + traffic lights + toolbar
-    guard let frameView = window.contentView?.superview,
-          let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { return nil }
-    rep.size = frameView.bounds.size
-    frameView.cacheDisplay(in: frameView.bounds, to: rep)
-    return rep.representation(using: .png, properties: [:])
-}
-#endif
-```
-
-**Headless-window limits (still cannot capture, even with `chrome=window`):**
-- True `NSVisualEffectView` vibrancy — there's no content behind the offscreen window to blur. Material renders against the window's own background.
-- `.sheet(...)` / `.popover(...)` / `.alert(...)` — still need a run-loop turn for presentation. Render the body as a `chrome=view` row.
-- Live animations / transitions — single frame only. Render start or end state explicitly.
-
-**`NSToolbar` retention (silent failure if forgotten):** `NSToolbar` holds its `delegate` weakly. If you write `tb.delegate = LibraryToolbarDelegate()` the delegate deallocates immediately and the toolbar renders empty. The fix: store the delegate on a property that outlives the snapshot call, or use `objc_setAssociatedObject(tb, "delegate-retain", delegate, .OBJC_ASSOCIATION_RETAIN)`. Build toolbars in `SnapshotTool/LibraryToolbar.swift` (or similar) — never inside `AppleUIScreens/`.
-
-**`SnapshotTool/main.swift`** loops the inventory and dispatches by `platform` × `chrome`:
-
-```swift
-enum Platform { case macOS, iOS, iPadOS }
-enum Chrome { case view, window }
-
-struct Snap {
-    let name: String
-    let platform: Platform
-    let kind: String           // "window", "sheet", "screen", etc. (from inventory)
-    let chrome: Chrome
-    let size: CGSize
-    let scheme: ColorScheme
-    let view: AnyView
-    var title: String = ""
-    #if canImport(AppKit)
-    var toolbar: NSToolbar? = nil   // only meaningful when platform == .macOS && chrome == .window
-    #endif
-
-    init(...) {
-        // FORBIDDEN combinations — fail fast at construction:
-        precondition(!(chrome == .window && (platform == .iOS || platform == .iPadOS)),
-                     "chrome=window is macOS-only — use chrome=view for iOS/iPadOS")
-        precondition(!(chrome == .window && kind != "window"),
-                     "chrome=window only applies to kind=window (not sheets/popovers/alerts)")
-        // ... assign properties
-    }
-}
-
-@MainActor
-func main() throws {
-    let outDir = URL(fileURLWithPath: "snapshots")
-    try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
-    let snaps: [Snap] = Inventory.all   // built from docs/screens.md, one Snap per row
-
-    for s in snaps {
-        let data: Data?
-        switch (s.platform, s.chrome) {
-        case (.macOS, .view):
-            data = snapshotMac(s.view, size: s.size, scheme: s.scheme)
-        #if canImport(AppKit)
-        case (.macOS, .window):
-            data = snapshotMacWindow(s.view, size: s.size, scheme: s.scheme,
-                                     title: s.title, toolbar: s.toolbar)
-        #endif
-        case (.iOS, .view), (.iPadOS, .view):
-            data = snapshotIOS(s.view, size: s.size, scheme: s.scheme)
-        case (.iOS, .window), (.iPadOS, .window):
-            fatalError("unreachable — preconditions reject this combination")
-        }
-        guard let png = data else {
-            print("✗ \(s.name) — render returned nil")
-            continue
-        }
-        try png.write(to: outDir.appendingPathComponent("\(s.name).png"))
-        print("✓ \(s.name)  [\(s.platform) / \(s.chrome)]")
-    }
-}
-```
-
-**Building NSToolbar for `chrome=window` rows:** `NSToolbar` requires an `NSToolbarDelegate` to vend items. The delegate is held **weakly** — if you don't retain it, the toolbar renders empty. Build the delegate in `SnapshotTool/LibraryToolbar.swift` (NOT in `AppleUIScreens/`) and retain it explicitly:
-
-```swift
-let libraryToolbar: NSToolbar = {
-    let tb = NSToolbar(identifier: "LibraryToolbar")
-    let delegate = LibraryToolbarDelegate()
-    tb.delegate = delegate
-    objc_setAssociatedObject(tb, "delegate-retain", delegate, .OBJC_ASSOCIATION_RETAIN)
-    tb.displayMode = .iconAndLabel
-    return tb
-}()
-```
-
-Rules:
+**Rules — apply to every render call:**
 - **One snap per inventory row.** No skipping, no batching.
-- **Scale 2.0** for Retina output. PNG carries no DPI metadata; note "rendered at 2× DPR" in the review context.
+- **Scale 2.0** on iOS for Retina output. PNG carries no DPI metadata; note "rendered at 2× DPR" in the review context.
 - **Window-unfocused** is `windowIsFocused: false` on `WindowChrome`, not opacity hacks on the whole view.
 - **Hover** is `forceHoverTarget`, not a real hover.
 - **A `nil` result almost always means** a `Scene` modifier or window-level toolbar leaked into the view graph — re-read the substitution table.
 
-**Inventory ↔ snapshot count check** (Python, robust to table separators and extra columns):
-
-```bash
-python3 - <<'PY'
-import pathlib, sys
-inv = []
-for line in pathlib.Path("docs/screens.md").read_text().splitlines():
-    if not line.strip().startswith("|"): continue
-    cells = [c.strip() for c in line.strip().strip("|").split("|")]
-    if not cells or not cells[0] or set(cells[0]) <= set("- "): continue
-    if cells[0].lower() == "name": continue
-    inv.append(cells[0])
-shots = sorted(p.stem for p in pathlib.Path("snapshots").glob("*.png"))
-missing = sorted(set(inv) - set(shots))
-extra   = sorted(set(shots) - set(inv))
-if missing: print("missing PNG:", *missing, sep="\n  "); sys.exit(1)
-if extra:   print("extra PNG (no inventory row):", *extra, sep="\n  "); sys.exit(1)
-print(f"OK — {len(inv)} inventory rows match {len(shots)} PNGs")
-PY
-```
-
-Missing PNG = work not done.
+**Inventory ↔ snapshot count check.** Copy `examples/inventory_check.py` to the user's project (e.g. as `scripts/inventory_check.py`) and run it from the project root after `swift run SnapshotTool`. It reads `docs/screens.md`, lists `snapshots/*.png`, and exits non-zero on mismatch. Missing PNG = work not done.
 
 ### 7. Review with `frontend-design`
 
 For each PNG, invoke `frontend-design` with:
 - **Primary input:** the PNG file path
-- **Context:** screen name, platform, kind, state, theme
+- **Context:** screen name, platform, kind, state
 - **Note for the reviewer:** "SwiftUI render at 2× DPR via hosting view. The real app supplies window-level toolbar, vibrancy, and sheet presentation — critique only what is visible. Do not propose web/CSS code."
 - **Known deltas to flag, not penalise:** approximated materials, no real `NSVisualEffectView` blur, no live unfocused-window chrome, no live sheets/popovers/alerts.
 
 Critique focus:
 - HIG fidelity per platform (Mac vs iOS spacing, type sizes, control sizing, tap targets)
 - Visual hierarchy and weight
-- Color and contrast (light + dark)
+- Color and contrast
 - Generic-AI red flags (rounded-everything, gradient buttons, emoji-as-icons, lorem-ipsum content, generic SF Symbols)
 
 **Persist every round to disk before fixing.** Write `docs/review-round-N.md` with one section per PNG and a bullet list of concrete issues. Do not write it after-the-fact.
@@ -448,7 +290,7 @@ Each round:
 **Shared (both platforms):**
 - **Type:** `.system(.body, design: .default)` — never `.font(.custom("Inter"…))`
 - **Spacing scale:** `enum Spacing { static let xs = 4.0, s = 8.0, m = 12.0, l = 16.0, xl = 20.0, xxl = 24.0, xxxl = 32.0 }`
-- **Colors:** semantic — `Color.accentColor`, `Color(nsColor: .labelColor)` / `Color(uiColor: .label)`, `Color(nsColor: .separatorColor)` / `Color(uiColor: .separator)`. Dark mode then "just works".
+- **Colors:** semantic — `Color.accentColor`, `Color(nsColor: .labelColor)` / `Color(uiColor: .label)`, `Color(nsColor: .separatorColor)` / `Color(uiColor: .separator)`.
 - **SF Symbols:** specific symbols, not generic `star.fill`. Avoid `.hierarchical` / `.palette` rendering modes — they sometimes drop colors offscreen.
 
 **macOS specifics (snapshot-safe):**
@@ -490,7 +332,6 @@ Each round:
 | Building/running the app for screenshots | `swift run SnapshotTool` only |
 | Hardcoded `Color.blue`, magic padding `12` | `Palette` and `Spacing` tokens |
 | `nil` snapshot result and you ignore it | Almost always a Scene modifier or window-level toolbar in the graph |
-| Skipping dark mode "because spec didn't say" | Both modes default; opt-out requires explicit user words |
 | Inventory states only `default` and `error` | Apply the full state rubric |
 | Skipping the `frontend-design` pass | Required |
 | One review round, declared "stable" | Minimum two rounds unless round 1 had zero substantive issues |
@@ -510,7 +351,6 @@ Each round:
 - "I'll add the dialog later" → no, all inventory rows are first-class
 - "I'll just use `.sheet` in the snapshot view" → no, render the sheet body directly
 - "Materials look gray, that's a bug" → no, that's expected; real app restores vibrancy
-- "Spec didn't say dark mode, skipping" → no, both modes default
 - "Round 1 was good enough" → did `review-round-1.md` actually have zero issues?
 - "Let me embed a fake store in the view for now" → no, breaks the integration contract
 - "Let me build the app to check it visually" → no, `swift run SnapshotTool` only
@@ -529,10 +369,9 @@ When done, report exactly:
 4. Paths to every `docs/review-round-N.md` file produced
 5. Number of review rounds, with one-sentence outcome per round
 6. Path to `snapshots/` so the user can open it
-7. Light/dark coverage statement
-8. Per-platform PNG counts (e.g., "macOS: 18, iOS: 8, iPadOS: 4")
-9. Per-chrome PNG counts (e.g., "chrome=view: 24, chrome=window: 6"). For each `chrome=window` row, **quote the exact spec phrase that triggered the opt-in** (must contain "titlebar", "traffic lights", "NSToolbar", or "window chrome", or reference a mockup that shows them)
-10. Confirmation: app never launched — only `swift run SnapshotTool`. For `chrome=window` rows, confirm `NSApplication.shared` was referenced but `NSApp.run()`, `.setActivationPolicy(.regular)`, `.activate(...)`, `makeKeyAndOrderFront`, and `orderFront` were NOT called
-11. Known offscreen render deltas (vibrancy approximated; sheets rendered as bodies; window-level toolbars either `WindowChrome` components or real `NSToolbar` via headless-window path)
+7. Per-platform PNG counts (e.g., "macOS: 18, iOS: 8, iPadOS: 4")
+8. Per-chrome PNG counts (e.g., "chrome=view: 24, chrome=window: 6"). For each `chrome=window` row, **quote the exact spec phrase that triggered the opt-in** (must contain "titlebar", "traffic lights", "NSToolbar", or "window chrome", or reference a mockup that shows them)
+9. Confirmation: app never launched — only `swift run SnapshotTool`. For `chrome=window` rows, confirm `NSApplication.shared` was referenced but `NSApp.run()`, `.setActivationPolicy(.regular)`, `.activate(...)`, `makeKeyAndOrderFront`, and `orderFront` were NOT called
+10. Known offscreen render deltas (vibrancy approximated; sheets rendered as bodies; window-level toolbars either `WindowChrome` components or real `NSToolbar` via headless-window path)
 
 If anything is missing or fabricated after-the-fact, you are not done.
